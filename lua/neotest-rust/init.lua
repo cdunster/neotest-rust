@@ -226,8 +226,8 @@ function adapter.build_spec(args)
 
     local command = vim.tbl_flatten({
         "cargo",
+        "llvm-cov",
         "nextest",
-        "run",
         "--no-fail-fast",
         "--config-file",
         tmp_nextest_config,
