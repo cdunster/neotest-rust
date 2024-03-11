@@ -26,7 +26,7 @@ describe("discover_positions", function()
                 id = vim.loop.cwd() .. "/tests/data/simple-package/src/main.rs",
                 name = "main.rs",
                 path = vim.loop.cwd() .. "/tests/data/simple-package/src/main.rs",
-                range = { 0, 0, 25, 0 },
+                range = { 0, 0, 27, 0 },
                 type = "file",
             },
             {
@@ -34,7 +34,7 @@ describe("discover_positions", function()
                     id = "tests",
                     name = "tests",
                     path = vim.loop.cwd() .. "/tests/data/simple-package/src/main.rs",
-                    range = { 7, 0, 24, 1 },
+                    range = { 9, 0, 26, 1 },
                     type = "namespace",
                 },
                 {
@@ -42,7 +42,7 @@ describe("discover_positions", function()
                         id = "tests::basic_math",
                         name = "basic_math",
                         path = vim.loop.cwd() .. "/tests/data/simple-package/src/main.rs",
-                        range = { 9, 4, 11, 5 },
+                        range = { 11, 4, 13, 5 },
                         type = "test",
                     },
                 },
@@ -51,7 +51,7 @@ describe("discover_positions", function()
                         id = "tests::failed_math",
                         name = "failed_math",
                         path = vim.loop.cwd() .. "/tests/data/simple-package/src/main.rs",
-                        range = { 14, 4, 16, 5 },
+                        range = { 16, 4, 18, 5 },
                         type = "test",
                     },
                 },
@@ -60,7 +60,7 @@ describe("discover_positions", function()
                         id = "tests::nested",
                         name = "nested",
                         path = vim.loop.cwd() .. "/tests/data/simple-package/src/main.rs",
-                        range = { 18, 4, 23, 5 },
+                        range = { 20, 4, 25, 5 },
                         type = "namespace",
                     },
                     {
@@ -68,7 +68,7 @@ describe("discover_positions", function()
                             id = "tests::nested::nested_math",
                             name = "nested_math",
                             path = vim.loop.cwd() .. "/tests/data/simple-package/src/main.rs",
-                            range = { 20, 8, 22, 9 },
+                            range = { 22, 8, 24, 9 },
                             type = "test",
                         },
                     },
@@ -465,6 +465,20 @@ describe("build_spec", function()
             assert.equal(spec.cwd, vim.loop.cwd() .. "/tests/data/simple-package")
         end)
 
+        it("can run tests in other_mod/foo.rs", function()
+            local tree = Tree:new({
+                type = "file",
+                path = vim.loop.cwd() .. "/tests/data/simple-package/src/other_mod/foo.rs",
+                id = vim.loop.cwd() .. "/tests/data/simple-package/src/other_mod/foo.rs",
+            }, {}, function(data)
+                return data
+            end, {})
+
+            local spec = plugin.build_spec({ tree = tree })
+            assert.equal(spec.context.test_filter, "-E " .. vim.fn.shellescape("test(/^other_mod::foo::/)"))
+            assert.equal(spec.cwd, vim.loop.cwd() .. "/tests/data/simple-package")
+        end)
+
         it("can run a single integration test", function()
             local tree = Tree:new({
                 type = "test",
@@ -791,6 +805,23 @@ describe("build_spec", function()
                 assert.equal(spec.cwd, vim.loop.cwd() .. "/tests/data/simple-package")
             end)
 
+            async.it("can debug tests in other_mod/foo.rs", function()
+                local tree = Tree:new({
+                    type = "file",
+                    path = vim.loop.cwd() .. "/tests/data/simple-package/src/other_mod/foo.rs",
+                    id = vim.loop.cwd() .. "/tests/data/simple-package/src/other_mod/foo.rs",
+                }, {}, function(data)
+                    return data
+                end, {})
+
+                local spec = plugin.build_spec({ tree = tree, strategy = "dap" })
+                assert.are.same(spec.strategy.args, {
+                    "--nocapture",
+                    "other_mod::foo",
+                })
+                assert.equal(spec.cwd, vim.loop.cwd() .. "/tests/data/simple-package")
+            end)
+
             async.it("can debug a single integration test", function()
                 local tree = Tree:new({
                     type = "test",
@@ -982,12 +1013,12 @@ describe("results", function()
 
         local expected = {
             ["foo::tests::should_fail"] = {
-                short = "thread 'foo::tests::should_fail' panicked at 'assertion failed: false', src/foo.rs:10:9\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+                short = "thread 'foo::tests::should_fail' panicked at src/foo.rs:10:9:\nassertion failed: false\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
                 status = "failed",
                 errors = {
                     {
                         line = 9,
-                        message = "assertion failed: false",
+                        message = "assertion failed: false\n",
                     },
                 },
             },
@@ -995,6 +1026,19 @@ describe("results", function()
                 status = "passed",
             },
         }
+
+        assert.are.same(expected, results)
+    end)
+
+    it("parses results with no test suite in it", function()
+        local adapter = require("neotest-rust")({})
+        local path = vim.loop.cwd() .. "/tests/data/simple-package/no_test_suite.xml"
+        local spec = { context = { junit_path = path }, strategy = { stdio = nil } }
+        local strategy_result = { code = 101, output = "/some/path" }
+
+        local results = adapter.results(spec, strategy_result, nil)
+
+        local expected = {}
 
         assert.are.same(expected, results)
     end)
@@ -1027,17 +1071,17 @@ describe("results", function()
 
         local expected = {
             ["foo::tests::should_fail"] = {
-                short = "thread 'foo::tests::should_fail' panicked at 'assertion failed: false', src/foo.rs:10:9\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+                short = "thread 'foo::tests::should_fail' panicked at src/foo.rs:10:9:\nassertion failed: false\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
                 status = "failed",
-                errors = { { line = 9, message = "assertion failed: false" } },
+                errors = { { line = 9, message = "assertion failed: false\n" } },
             },
             ["foo::tests::should_pass"] = {
                 status = "passed",
             },
             should_fail = {
-                short = "thread 'should_fail' panicked at 'assertion failed: false', tests/tests.rs:8:5\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+                short = "thread 'should_fail' panicked at tests/tests.rs:8:5:\nassertion failed: false\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
                 status = "failed",
-                errors = { { line = 7, message = "assertion failed: false" } },
+                errors = { { line = 7, message = "assertion failed: false\n" } },
             },
             should_pass = {
                 status = "passed",
@@ -1116,5 +1160,21 @@ describe("results", function()
         }
 
         assert.are.same(expected, results)
+    end)
+end)
+
+describe("filter_dir", function()
+    it("doesn't exclude the src directory", function()
+        local adapter = require("neotest-rust")({})
+        local root = vim.loop.cwd() .. "/tests/data/simple-package"
+
+        assert.equals(adapter.filter_dir("src", "src", root), true)
+    end)
+
+    it("excludes the target directory", function()
+        local adapter = require("neotest-rust")({})
+        local root = vim.loop.cwd() .. "/tests/data/simple-package"
+
+        assert.equals(adapter.filter_dir("target", "target", root), false)
     end)
 end)
